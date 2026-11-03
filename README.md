@@ -22,6 +22,7 @@ command: python solutie.py {base_url}
 2. **Contract JSON strict**: în toate apelurile `POST` sunt trimise exclusiv câmpurile documentate în schema OpenAPI, cu valorile normalizate (`N1`–`N6`); câmpurile necunoscute din cereri sau din răspunsurile sistemelor (inclusiv note libere de tip `notes`) sunt ignorate.
 3. **Determinism complet la repornire**: listele de pachete, instruiri și coduri de motiv (`reason_codes`) sunt deduplicate și sortate într-o ordine canonică fixă, iar mesajele de notificare sunt construite determinist doar din datele cererii și nu conțin nicio cifră (garantând absența CNP-ului în orice formă).
 4. **Ordinea procesării**: cererile din `GET /requests` sunt procesate secvențial în ordinea canonică (`received_at` comparat ca moment în timp, urmat de `request_id`), deoarece conturile și întâlnirile create anterior influențează regulile `B-R08`, `B-R10` și `B-R12`.
+5. **Cererea de modificare CR-1 (Transferuri interne)**: activată dinamic doar când `features.transfers` este `true` în `GET /config` (astfel încât suitele fără CR-1 păstrează comportamentul de bază Faza 1 fără regresii). Pentru cererile `TRANSFER`, contul existent este refolosit (`NO_EXISTING_ACCOUNT` dacă lipsește), drepturile active din afara setului țintă sunt revocate prin `POST /access/revocations` înaintea acordării pachetelor noi, iar instruirile finalizate (`COMPLETED`) la sau după `start_date - transfer.training_recency_months` nu se mai reînscriu.
 
 ## Structura proiectului
 

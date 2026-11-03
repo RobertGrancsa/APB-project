@@ -185,7 +185,9 @@ def run_onboarding(
                 # Already recorded in an earlier start of this run: send only missing notifications
                 encoded_id = urllib.parse.quote(request_id, safe="")
                 doc = hub.get(f"/requests/{encoded_id}")
-                req = normalize_request(request_id, doc)
+                req = normalize_request(
+                    request_id, doc, transfers_enabled=ref.config.transfers_enabled
+                )
                 send_missing_notifications(
                     req, recorded_outcome, recorded_meeting_step, ref, hub
                 )
@@ -214,7 +216,9 @@ def run_onboarding(
         # Step 4: read and normalize request document
         encoded_id = urllib.parse.quote(request_id, safe="")
         doc = hub.get(f"/requests/{encoded_id}")
-        req = normalize_request(request_id, doc)
+        req = normalize_request(
+            request_id, doc, transfers_enabled=ref.config.transfers_enabled
+        )
 
         # Step 5: validate business rules B-R01..B-R09
         val = validate_request(req, ref, hub)

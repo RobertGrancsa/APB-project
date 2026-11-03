@@ -4,6 +4,7 @@
 
 # Course runner & OpenAPI tools (not submitted in repo)
 Instrumente/
+*.zip
 
 # Python cache & build artifacts
 __pycache__/

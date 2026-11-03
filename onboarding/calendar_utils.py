@@ -1,10 +1,20 @@
 from __future__ import annotations
 
+import calendar
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 
 MAX_BUSY_SPAN_DAYS = 62
+
+
+def subtract_months(start_date: date, months: int) -> date:
+    """CR-1 B-R11: subtract `months` calendar months, clamping to the last day of shorter months."""
+    total_months = start_date.year * 12 + (start_date.month - 1) - months
+    year, zero_month = divmod(total_months, 12)
+    month = zero_month + 1
+    max_day = calendar.monthrange(year, month)[1]
+    return date(year, month, min(start_date.day, max_day))
 
 
 def is_working_day(day: date, holidays: frozenset[date]) -> bool:

@@ -14,6 +14,7 @@ from onboarding.calendar_utils import (
     find_first_free_meeting_slot,
     get_meeting_window_days,
     parse_iso_datetime,
+    subtract_months,
 )
 from onboarding.engine import run_onboarding
 from onboarding.http_client import FatalHubError, HubClient
@@ -149,11 +150,19 @@ class MockInMemoryHub(HubClient):
                 res = [a for a in res if a.get("request_id") == params["request_id"]]
             return res
         if path == "/access/grants":
-            rid = params.get("request_id")
-            return [g for g in self.grants if not rid or g["request_id"] == rid]
+            res = list(self.grants)
+            if params.get("request_id"):
+                res = [g for g in res if g["request_id"] == params["request_id"]]
+            if params.get("username"):
+                res = [g for g in res if g["username"] == params["username"]]
+            return res
         if path == "/lms/enrollments":
-            rid = params.get("request_id")
-            return [e for e in self.enrollments if not rid or e["request_id"] == rid]
+            res = list(self.enrollments)
+            if params.get("request_id"):
+                res = [e for e in res if e["request_id"] == params["request_id"]]
+            if params.get("username"):
+                res = [e for e in res if e["username"] == params["username"]]
+            return res
         if path == "/calendar/meetings":
             rid = params.get("request_id")
             return [m for m in self.meetings if not rid or m["request_id"] == rid]
@@ -192,7 +201,13 @@ class MockInMemoryHub(HubClient):
             self.accounts.append(rec)
             return rec
         if path == "/access/grants":
-            self.grants.append(dict(body))
+            rec = {**body, "status": "ACTIVE"}
+            self.grants.append(rec)
+            return rec
+        if path == "/access/revocations":
+            for g in self.grants:
+                if g["username"] == body["username"] and g["package_code"] == body["package_code"]:
+                    g["status"] = "REVOKED"
             return body
         if path == "/lms/enrollments":
             self.enrollments.append(dict(body))
@@ -495,6 +510,127 @@ class OnboardingUnitTests(unittest.TestCase):
         self.assertEqual(res, {"created": True})
         self.assertEqual(sleeps, [2.0, 0.5, 1.0])
         self.assertEqual(len(logs), 3)
+
+    def test_cr1_internal_transfers_and_recency_rules(self) -> None:
+        # Month subtraction edge cases
+        self.assertEqual(subtract_months(date(2028, 2, 29), 12), date(2027, 2, 28))
+        self.assertEqual(subtract_months(date(2027, 8, 31), 18), date(2026, 2, 28))
+
+        # When features.transfers is false, TRANSFER must be rejected as INVALID_REQUEST (B-R01)
+        hub_disabled = MockInMemoryHub()
+        hub_disabled.requests = [{"request_id": "TR_OFF", "received_at": "2026-11-16T08:00:00+02:00"}]
+        hub_disabled.request_docs["TR_OFF"] = {
+            "request_type": "TRANSFER",
+            "first_name": "Ana",
+            "last_name": "Popescu",
+            "cnp": "2940715120454",
+            "personal_email": "ana@example.com",
+            "start_date": "2026-11-23",
+            "role_code": "AP_CLERK",
+            "department_code": "FIN",
+            "manager_id": "MGR1",
+        }
+        rep_off = run_onboarding(hub_disabled)
+        self.assertEqual(
+            rep_off,
+            [{"request_id": "TR_OFF", "outcome": Outcome.REJECTED, "reason_codes": ["INVALID_REQUEST"]}],
+        )
+
+        # CR-1 spec example: ana.popescu transfer to AP_CLERK in FIN on 2027-01-18 + NO_EXISTING_ACCOUNT case
+        hub = MockInMemoryHub()
+        hub.context = {"business_date": "2027-01-11"}
+        hub.config["features"] = {"transfers": True}
+        hub.config["transfer"] = {"training_recency_months": 12}
+        hub.accounts.append(
+            {
+                "username": "ana.popescu",
+                "cnp": "2940715120454",
+                "request_id": "ONB-OLD",
+                "status": "ACTIVE",
+            }
+        )
+        for pkg in ("ERP-FIN-POST", "ERP-FIN-VIEW", "MAIL"):
+            hub.grants.append(
+                {
+                    "request_id": "ONB-OLD",
+                    "username": "ana.popescu",
+                    "package_code": pkg,
+                    "status": "ACTIVE",
+                }
+            )
+        # FIN-101 completed on exact cutoff 2026-01-18 -> NOT repeated; SSM-100 on 2025-12-18 -> repeated
+        hub.enrollments.extend(
+            [
+                {
+                    "request_id": "ONB-OLD",
+                    "username": "ana.popescu",
+                    "training_code": "FIN-101",
+                    "due_date": "2026-01-18",
+                    "status": "COMPLETED",
+                    "completed_on": "2026-01-18",
+                },
+                {
+                    "request_id": "ONB-OLD",
+                    "username": "ana.popescu",
+                    "training_code": "SSM-100",
+                    "due_date": "2025-12-18",
+                    "status": "COMPLETED",
+                    "completed_on": "2025-12-18",
+                },
+            ]
+        )
+        cnp_missing = _build_valid_cnp("190031501009")
+        hub.requests = [
+            {"request_id": "TR_OK", "received_at": "2027-01-11T08:00:00+02:00"},
+            {"request_id": "TR_NO_ACC", "received_at": "2027-01-11T09:00:00+02:00"},
+        ]
+        hub.request_docs["TR_OK"] = {
+            "request_type": "TRANSFER",
+            "first_name": "Ana",
+            "last_name": "Popescu",
+            "cnp": "2940715120454",
+            "personal_email": "ana.popescu@example.com",
+            "start_date": "2027-01-18",
+            "role_code": "AP_CLERK",
+            "department_code": "FIN",
+            "manager_id": "MGR1",
+        }
+        hub.request_docs["TR_NO_ACC"] = {
+            "request_type": "TRANSFER",
+            "first_name": "Ion",
+            "last_name": "Ionescu",
+            "cnp": cnp_missing,
+            "personal_email": "ion@example.com",
+            "start_date": "2027-01-18",
+            "role_code": "AP_CLERK",
+            "department_code": "FIN",
+            "manager_id": "MGR1",
+        }
+
+        rep = run_onboarding(hub)
+        self.assertEqual(
+            rep,
+            [
+                {"request_id": "TR_OK", "outcome": Outcome.COMPLETED, "reason_codes": []},
+                {
+                    "request_id": "TR_NO_ACC",
+                    "outcome": Outcome.MANUAL_REVIEW,
+                    "reason_codes": ["NO_EXISTING_ACCOUNT"],
+                },
+            ],
+        )
+        # Account reused without creating a second account
+        self.assertEqual(len(hub.accounts), 1)
+        # Active grants are now exact target [ERP-AP-ENTRY, ERP-FIN-VIEW, MAIL]
+        active_now = sorted(
+            g["package_code"] for g in hub.grants if g["username"] == "ana.popescu" and g["status"] == "ACTIVE"
+        )
+        self.assertEqual(active_now, ["ERP-AP-ENTRY", "ERP-FIN-VIEW", "MAIL"])
+        # New enrollments for TR_OK exclude FIN-101, include ERP-201, GDPR-100, SSM-100
+        tr_ok_enrolled = sorted(
+            e["training_code"] for e in hub.enrollments if e["request_id"] == "TR_OK"
+        )
+        self.assertEqual(tr_ok_enrolled, ["ERP-201", "GDPR-100", "SSM-100"])
 
 
 if __name__ == "__main__":

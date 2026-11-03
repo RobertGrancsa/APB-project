@@ -44,6 +44,7 @@ CANONICAL_REASON_ORDER: tuple[str, ...] = (
     "MANAGER_MISSING",
     "MANAGER_INACTIVE",
     "ALREADY_EMPLOYED",
+    "NO_EXISTING_ACCOUNT",
     "SOD_CONFLICT",
     # Provisioning failures & warnings (B-R12, B-R13)
     "ACCOUNT_FAILED",
@@ -73,17 +74,30 @@ class RunConfig:
     meeting_window_working_days: int
     meeting_timezone: str
     notification_recipients: dict[str, str]
+    transfers_enabled: bool = False
+    transfer_training_recency_months: int = 12
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_api(cls, data: dict[str, Any]) -> RunConfig:
         meeting = data.get("meeting") if isinstance(data.get("meeting"), dict) else {}
+        features = data.get("features") if isinstance(data.get("features"), dict) else {}
+        transfer = data.get("transfer") if isinstance(data.get("transfer"), dict) else {}
         recipients_raw = data.get("notification_recipients") or {}
         recipients = {
             str(k).strip().upper(): str(v).strip()
             for k, v in recipients_raw.items()
             if v is not None
         }
+        transfers_enabled = bool(
+            features.get("transfers", data.get("features.transfers", False))
+        )
+        recency_months = int(
+            transfer.get(
+                "training_recency_months",
+                data.get("transfer.training_recency_months", 12),
+            )
+        )
         return cls(
             minimum_age=int(data["minimum_age"]),
             adult_age=int(data["adult_age"]),
@@ -106,6 +120,8 @@ class RunConfig:
                 meeting.get("timezone", data.get("meeting.timezone", "Europe/Bucharest"))
             ).strip(),
             notification_recipients=recipients,
+            transfers_enabled=transfers_enabled,
+            transfer_training_recency_months=recency_months,
             raw=data,
         )
 
@@ -180,6 +196,7 @@ class ValidationResult:
     reason_codes: list[str]
     target_packages: tuple[str, ...]
     target_trainings: tuple[str, ...]
+    existing_username: str | None = None
 
 
 @dataclass(frozen=True)

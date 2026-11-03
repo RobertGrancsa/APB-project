@@ -123,16 +123,28 @@ def validate_request(
     elif ref.employees[req.manager_id].status != "ACTIVE":
         codes.append("MANAGER_INACTIVE")
 
-    # B-R08: live Directory check for same CNP under a different request_id (omitted if B-R02 failed)
+    # B-R08: live Directory check (omitted if B-R02 failed)
+    existing_username: str | None = None
     if not b_r02_failed:
         existing_accounts = hub.get("/directory/accounts", {"cnp": req.cnp})
-        for acc in existing_accounts:
-            acc_cnp = str(acc.get("cnp") or "").strip()
-            acc_req_id = acc.get("request_id")
-            acc_req_id_norm = acc_req_id.strip() if isinstance(acc_req_id, str) else None
-            if acc_cnp == req.cnp and acc_req_id_norm != req.request_id:
-                codes.append("ALREADY_EMPLOYED")
-                break
+        if req.request_type == "TRANSFER":
+            cnp_matches = [
+                acc
+                for acc in existing_accounts
+                if str(acc.get("cnp") or "").strip() == req.cnp
+            ]
+            if not cnp_matches:
+                codes.append("NO_EXISTING_ACCOUNT")
+            else:
+                existing_username = str(cnp_matches[0]["username"]).strip()
+        else:
+            for acc in existing_accounts:
+                acc_cnp = str(acc.get("cnp") or "").strip()
+                acc_req_id = acc.get("request_id")
+                acc_req_id_norm = acc_req_id.strip() if isinstance(acc_req_id, str) else None
+                if acc_cnp == req.cnp and acc_req_id_norm != req.request_id:
+                    codes.append("ALREADY_EMPLOYED")
+                    break
 
     # Target packages & trainings + B-R09 SoD check (omitted if B-R04 or B-R06 failed)
     target_packages: tuple[str, ...] = ()
@@ -168,6 +180,7 @@ def validate_request(
             reason_codes=ordered_codes,
             target_packages=target_packages,
             target_trainings=target_trainings,
+            existing_username=existing_username,
         )
 
     return ValidationResult(
@@ -176,4 +189,5 @@ def validate_request(
         reason_codes=[],
         target_packages=target_packages,
         target_trainings=target_trainings,
+        existing_username=existing_username,
     )

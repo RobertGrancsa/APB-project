@@ -96,7 +96,12 @@ def generate_base_username(first_name: str, last_name: str) -> str:
     return f"{given_slug}.{family_slug}"
 
 
-def normalize_request(request_id: str, doc: dict[str, Any]) -> NormalizedRequest:
+def normalize_request(
+    request_id: str,
+    doc: dict[str, Any],
+    *,
+    transfers_enabled: bool = False,
+) -> NormalizedRequest:
     """Apply rules N1-N6 and evaluate structural prerequisites for B-R01."""
     raw_valid = True
     for field_name in REQUIRED_STRING_FIELDS:
@@ -135,8 +140,9 @@ def normalize_request(request_id: str, doc: dict[str, Any]) -> NormalizedRequest
     if isinstance(doc.get("start_date"), str) and doc["start_date"].strip():
         parsed_date = parse_start_date(doc["start_date"])
 
+    allowed_types = ("NEW_HIRE", "TRANSFER") if transfers_enabled else ("NEW_HIRE",)
     if raw_valid:
-        if req_type != "NEW_HIRE":
+        if req_type not in allowed_types:
             raw_valid = False
         elif parsed_date is None:
             raw_valid = False

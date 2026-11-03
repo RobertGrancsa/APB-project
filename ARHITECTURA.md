@@ -35,6 +35,7 @@ Soluția este organizată modular în jurul unui orchestrator fără stare local
 | **B-R12** | Fereastra de `window_working_days` de la `start_date` inclusiv, sloturi `Europe/Bucharest`, intervale semideschise peste `GET /calendar/busy` (`DONE` / `NO_SLOT` + `MEETING_NOT_SCHEDULED`) | `onboarding/calendar_utils.py` → `get_meeting_window_days()`, `find_first_free_meeting_slot()` și `onboarding/provisioner.py` |
 | **B-R13** | Tratarea eșecurilor definitive (`3 × 500`) pe cele 4 scrieri de configurare: `ACCOUNT_FAILED` sare pașii rămași (`SKIPPED`); celelalte opresc doar pasul propriu și duc la `PARTIAL` | `onboarding/http_client.py` (`ProvisioningStepError`) și `onboarding/provisioner.py` → `provision_onboarding()` |
 | **B-R14** | Decizia pe ultima înregistrare din `GET /history`: `THIS_RUN` trimite doar notificările lipsă; `EARLIER_RUN` finalizat nu scrie nimic; `EARLIER_RUN` cu `PARTIAL` refolosește pașii existenți | `onboarding/engine.py` → `run_onboarding()` și `onboarding/notifier.py` → `send_missing_notifications()` |
+| **CR-1 (Transferuri)** | Activat când `features.transfers == true`: acceptă `TRANSFER` (`B-R01`), verifică existența contului (`NO_EXISTING_ACCOUNT` la `B-R08`), refolosește primul cont din Directory (`B-R10`), revocă pachetele active vechi (`POST /access/revocations`) înainte de acordările noi (`B-R09`) și omite instruirile `COMPLETED` în fereastra `transfer.training_recency_months` (`B-R11`) | `onboarding/normalizer.py`, `onboarding/validator.py`, `onboarding/calendar_utils.py` → `subtract_months()`, `onboarding/provisioner.py` |
 
 ---
 
@@ -49,6 +50,7 @@ Fiecare cerere HTTP folosește un timeout de client de **10 secunde** și aplic�
 ### Cheile de idempotență
 Cheile nu conțin niciodată valori aleatoare sau marcaje de timp, fiind derivate strict din identificatorii entităților:
 - Cont Directory: `{request_id}:account`
+- Revocare pachet (CR-1): `{request_id}:revoke:{package_code}`
 - Acordare pachet: `{request_id}:grant:{package_code}`
 - Înscriere instruire: `{request_id}:training:{training_code}`
 - Întâlnire calendar: `{request_id}:meeting`
