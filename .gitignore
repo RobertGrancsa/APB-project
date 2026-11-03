@@ -1,0 +1,19 @@
+# Secrets & local environment
+.env
+.env.*
+
+# Course runner & OpenAPI tools (not submitted in repo)
+Instrumente/
+
+# Python cache & build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+*.egg-info/
+.venv/
+venv/
+
+# OS metadata
+.DS_Store
